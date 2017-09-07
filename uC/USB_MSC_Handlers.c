@@ -26,12 +26,14 @@
 //that isn't going to support interruption by USB very well.  Alternatively, the seek logic
 //should be folded into the read USB function
 
-uint16_t*sectorBuffer;
-uint_fast8_t sectorBufferValid[40];
-uint_fast16_t prevSeekTrack;
-uint_fast8_t prevSeekHead;
+uint16_t *SectorBuffer;
+uint_fast8_t SectorBufferValid[40];
+uint_fast16_t PrevSeekTrack;
+uint_fast8_t PrevSeekHead;
 
 uint32_t i;
+
+#define RL_DEBUG 0	// For debugging puposes only
 
 #define DRIVE_ATTACHED 1
 #define DRIVE_LOADED   2
@@ -81,30 +83,32 @@ int32_t seek(void *drive, uint_fast8_t head, uint_fast16_t track)
     if(drive == 0)
         return ERR_INVALID_PARAMS;
 
-    uint32_t failedSeek = 0;
-    uint32_t badSectorHeader = 0;
+    uint32_t FailedSeek = 0;
+    uint32_t BadSectorHeader = 0;
 
-    uint_fast16_t lastCyl = 0xFFFF;
-    uint_fast8_t lastHead = 0xFF;
+    uint_fast16_t LastCyl = 0xFFFF;
+    uint_fast8_t LastHead = 0xFF;
 
-    uint_fast8_t justReturnCurSector = 0;
+    uint_fast8_t JustReturnCurSector = 0;
 
     uint32_t position = 0;
 
-    uint32_t headerWord = 0;
-    uint32_t reservedWord = 0;
+    uint32_t HeaderWord = 0;
+    uint32_t ReservedWord = 0;
     uint32_t CRC = 0;
 
-    if(head>1 || track > 511)
+    if(head<0 || head>1 || track<0 || track>511)
     {
-        while(1) ;  //TODO Remove - Trap here for examination
+#ifdef RL_DEBUG
+        while(1) ;  //Trap here for examination
+#endif
         return ERR_INVALID_PARAMS;
     }
 
     //TODO We really shouldn't just trust that the heads are where we left them
-    if(prevSeekTrack == track && prevSeekHead == head)
+    if(PrevSeekTrack == track && PrevSeekHead == head)
     {
-        justReturnCurSector = 1;
+        JustReturnCurSector = 1;
     }
 
     while(1) //Breakout on successful location of track or unrecoverable failure
@@ -117,57 +121,59 @@ int32_t seek(void *drive, uint_fast8_t head, uint_fast16_t track)
         }
         else //If this is a header word
         {
-            uint16_t calculatedCRC;
-            uint8_t crcPack[2];
+            uint16_t CalculatedCRC;
+            uint8_t CrcPack[2];
 
             //Store the word in the proper place
-            SPIRx(&headerWord);
+            SPIRx(&HeaderWord);
 
-            crcPack[0] = headerWord & 0xFF;
-            crcPack[1] = (headerWord>>8) & 0xFF;
-            calculatedCRC = Crc16(0, (const uint8_t*)crcPack, 2);
+            CrcPack[0] = HeaderWord & 0xFF;
+            CrcPack[1] = (HeaderWord>>8) & 0xFF;
+            CalculatedCRC = Crc16(0, (const uint8_t*)CrcPack, 2);
 
             waitForData();
-            SPIRx(&reservedWord);
+            SPIRx(&ReservedWord);
 
-            crcPack[0] = reservedWord & 0xFF;
-            crcPack[1] = (reservedWord>>8) & 0xFF;
-            calculatedCRC = Crc16(calculatedCRC, (const uint8_t*)crcPack, 2);
+            CrcPack[0] = ReservedWord & 0xFF;
+            CrcPack[1] = (ReservedWord>>8) & 0xFF;
+            CalculatedCRC = Crc16(CalculatedCRC, (const uint8_t*)CrcPack, 2);
 
             waitForData();
             SPIRx(&CRC);
 
-            if(CRC != calculatedCRC)
+            if(CRC != CalculatedCRC)
             {
-                badSectorHeader++;
-                if(badSectorHeader>40) //If there is a truly bad header, there will be a 50ms penalty before giving up, but we are insensative to a run of two bad sectors
+                BadSectorHeader++;
+                if(BadSectorHeader>40) //If there is a truly bad header, there will be a 50ms penalty before giving up, but we are insensative to a run of two bad sectors
                 {
-                    while(1) ;  //TODO Remove - Trap here for examination
+#ifdef RL_DEBUG
+                    while(1) ;  //Trap here for examination
+#endif
                     return ERR_HEADER_CRC_FAIL;
                 }
                 continue; //Look for another sector
             }
 
             //If we've previously calculated that we don't need to seek
-            if(justReturnCurSector)
+            if(JustReturnCurSector)
             {
-                return headerWord & 0b111111;
+                return HeaderWord & 0b111111;
             }
 
             //Do some bit-fu on the incoming data
-            uint_fast16_t cylFromDrive = (headerWord>>7) & 0b111111111;
-            uint_fast8_t headFromDrive = (headerWord>>6) & 0b1;
+            uint_fast16_t cylFromDrive = (HeaderWord>>7) & 0b111111111;
+            uint_fast8_t headFromDrive = (HeaderWord>>6) & 0b1;
 
-            lastCyl = cylFromDrive;
-            lastHead = headFromDrive;
+            LastCyl = cylFromDrive;
+            LastHead = headFromDrive;
 
             //If we've landed on the requested track
             if(cylFromDrive == track && headFromDrive == head)
             {
-                prevSeekHead = head;
-                prevSeekTrack = track;
+                PrevSeekHead = head;
+                PrevSeekTrack = track;
 
-                return headerWord & 0b111111; //We are done seeking, return the current sector
+                return HeaderWord & 0b111111; //We are done seeking, return the current sector
             }
             else //If we need to move still, issue our seek command
             {
@@ -187,7 +193,7 @@ int32_t seek(void *drive, uint_fast8_t head, uint_fast16_t track)
 
                 //The drive is mis-seeking and we're stuck on the same track for more than 3 iterations
                 //Perterb the heads additional tracks. At least two drives were observed with this problem
-                if(failedSeek%4==3 && cylFromDrive==lastCyl && headFromDrive==lastHead)
+                if(FailedSeek%4==3 && cylFromDrive==LastCyl && headFromDrive==LastHead)
                 {
                     if(cylFromDrive < 255) //if we're stuck on the outward part of the disk
                     {
@@ -199,10 +205,12 @@ int32_t seek(void *drive, uint_fast8_t head, uint_fast16_t track)
                     }
                 }
 
-                if(failedSeek > 15)
+                if(FailedSeek > 15)
                 {
                     //TODO Maybe record the offending seeks
-                    while(1) ;  //TODO Remove - Trap here for examination
+#ifdef RL_DEBUG
+                    while(1) ;  // Trap here for examination
+#endif
                     return ERR_SEEK_FAILED;
                 }
 
@@ -213,11 +221,11 @@ int32_t seek(void *drive, uint_fast8_t head, uint_fast16_t track)
                 //Invalidate the read cache
                 for(i = 0; i<40; i++)
                 {
-                    sectorBufferValid[i] = 0;
+                    SectorBufferValid[i] = 0;
                 }
 
                 //Track the number of seek commands sent to the drive this function call
-                failedSeek++;
+                FailedSeek++;
             }
         }
     }
@@ -245,14 +253,14 @@ void* USB_MSC_Open(uint32_t driveNum)
     if(driveNum > 0)
         return 0;
 
-    if(!sectorBuffer)
+    if(!SectorBuffer)
     {
-        sectorBuffer = (uint16_t*)calloc(40*128,sizeof(uint16_t));
+        SectorBuffer = (uint16_t*)calloc(40*128,sizeof(uint16_t));
         for(i = 0; i<40; i++)
         {
-            sectorBufferValid[i] = 0;
+            SectorBufferValid[i] = 0;
         }
-        if(!sectorBuffer)
+        if(!SectorBuffer)
         {
             return 0;
         }
@@ -281,7 +289,7 @@ void USB_MSC_Close(void *drive)
     if(drive == 0)
         return;
 
-    free(sectorBuffer);
+    free(SectorBuffer);
     //TODO Reset drive
 }
 
@@ -299,30 +307,30 @@ uint32_t USB_MSC_Read(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t c
     uint_fast8_t head = 0;
     uint_fast16_t track = 0;
 
-    uint_fast32_t completedBlocks = 0;
-    while(completedBlocks<count)
+    uint_fast32_t CompletedBlocks = 0;
+    while(CompletedBlocks<count)
     {
         //Looks like simh uses this layout for logical access. It's not physically optimal.
-        head = sectorNum+completedBlocks > 20479 ? 1 : 0;
-        sector = (sectorNum+completedBlocks) % 40;
-        track = ((sectorNum+completedBlocks) / 40) % 512;
+        head = sectorNum+CompletedBlocks > 20479 ? 1 : 0;
+        sector = (sectorNum+CompletedBlocks) % 40;
+        track = ((sectorNum+CompletedBlocks) / 40) % 512;
 
         //This is how the RL02 User guide lists linear access
         /*/ /Entire track, alternating heads
-        head = (sectorNum+completedBlocks) % 80 > 39 ? 1 : 0;
-        sector = ((sectorNum+completedBlocks) % 40);
-        track = ((sectorNum+completedBlocks) / 80) % 512;
+        head = (sectorNum+CompletedBlocks) % 80 > 39 ? 1 : 0;
+        sector = ((sectorNum+CompletedBlocks) % 40);
+        track = ((sectorNum+CompletedBlocks) / 80) % 512;
         */
 
         int32_t ret;
         uint32_t dontCare;
-        uint32_t headerWord;
-        uint32_t reservedWord;
-        uint32_t headerCRCWord;
-        uint32_t dataWord;
+        uint32_t HeaderWord;
+        uint32_t ReservedWord;
+        uint32_t HeaderCRCWord;
+        uint32_t DataWord;
         uint32_t dataCRCWord;
 
-        uint_fast8_t sectorNumberFromDrive;
+        uint_fast8_t SectorNumberFromDrive;
 
         ret = seek(drive, head, track); //Seeks are internally a NOP if we're on it.
         if(ret<0) //If the seek failed
@@ -330,30 +338,30 @@ uint32_t USB_MSC_Read(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t c
             //There's no way to indicate what type of failure occured to the PC, so just tell it we're returning 0 sectors
             return 0;
         }
-        sectorNumberFromDrive = ret;
+        SectorNumberFromDrive = ret;
 
-        if(sectorBufferValid[sector]) //If the data we are looking for is in cache
+        if(SectorBufferValid[sector]) //If the data we are looking for is in cache
         {
             for(i=0; i<128; i++) //Read it out from cache
             {
-                data[(i*2) + (completedBlocks*2*132)] = sectorBuffer[(sector*128)+i] & 0xFF;
-                data[(i*2) + (completedBlocks*2*132) + 1] = sectorBuffer[(sector*128)+i]>>8 & 0xFF;
+                data[(i*2) + (CompletedBlocks*2*132)] = SectorBuffer[(sector*128)+i] & 0xFF;
+                data[(i*2) + (CompletedBlocks*2*132) + 1] = SectorBuffer[(sector*128)+i]>>8 & 0xFF;
             }
-            completedBlocks++;
+            CompletedBlocks++;
         }
 
         else //If our data is not in cache
         {
-            while (sectorNumberFromDrive != sector)
+            while (SectorNumberFromDrive != sector)
             {
-                if(!sectorBufferValid[sectorNumberFromDrive]) //If the cache needs to be updated
+                if(!SectorBufferValid[SectorNumberFromDrive]) //If the cache needs to be updated
                 {
                     for(i = 0; i<128; i++)
                     {
                         waitForData();
-                        SPIRx(&dataWord);
+                        SPIRx(&DataWord);
 
-                        sectorBuffer[i+(sectorNumberFromDrive*128)] = dataWord; //Cache the value
+                        SectorBuffer[i+(SectorNumberFromDrive*128)] = DataWord; //Cache the value
 
                         if(i == 127) //Last Word
                         {
@@ -362,7 +370,7 @@ uint32_t USB_MSC_Read(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t c
                             SPIRx(&dataCRCWord);
                         }
                     }
-                    sectorBufferValid[sectorNumberFromDrive] = 1; //Mark the sector as cached
+                    SectorBufferValid[SectorNumberFromDrive] = 1; //Mark the sector as cached
                 }
                 else //Else we need to pop off words until we find another sector
                 {
@@ -377,17 +385,17 @@ uint32_t USB_MSC_Read(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t c
                         else
                         {
                             waitForData();
-                            SPIRx(&headerWord);
+                            SPIRx(&HeaderWord);
 
                             waitForData();
-                            SPIRx(&reservedWord);
+                            SPIRx(&ReservedWord);
 
                             waitForData();
-                            SPIRx(&headerCRCWord);
+                            SPIRx(&HeaderCRCWord);
 
                             //TODO Check CRC
 
-                            sectorNumberFromDrive = headerWord & 0b111111;
+                            SectorNumberFromDrive = HeaderWord & 0b111111;
 
                             break; //If this is a header word, get out of this loop and check it
                         }
@@ -397,22 +405,22 @@ uint32_t USB_MSC_Read(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t c
 
             //At this point, we're on the right track, right head, right sector
 
-            uint16_t calculatedCRC = 0;
+            uint16_t CalculatedCRC = 0;
             for(i = 0; i<128; i++)
             {
-                uint8_t crcPack[2];
+                uint8_t CrcPack[2];
 
                 waitForData();
-                SPIRx(&dataWord);
+                SPIRx(&DataWord);
 
                 //TODO Figure out the word/byte swapping necessary for the common data storage mode (8/12/16 bit disk storage mode? Need expert information)
-                data[(i*2) + (completedBlocks*2*132)] = dataWord & 0xFF;
-                data[(i*2) + (completedBlocks*2*132) + 1] = dataWord>>8 & 0xFF;
-                sectorBuffer[i+(sectorNumberFromDrive*128)] = dataWord; //Cache the value
+                data[(i*2) + (CompletedBlocks*2*132)] = DataWord & 0xFF;
+                data[(i*2) + (CompletedBlocks*2*132) + 1] = DataWord>>8 & 0xFF;
+                SectorBuffer[i+(SectorNumberFromDrive*128)] = DataWord; //Cache the value
 
-                crcPack[0] = dataWord & 0xFF;
-                crcPack[1] = (dataWord>>8) & 0xFF;
-                calculatedCRC = Crc16(calculatedCRC, (const uint8_t*)crcPack, 2);
+                CrcPack[0] = DataWord & 0xFF;
+                CrcPack[1] = (DataWord>>8) & 0xFF;
+                CalculatedCRC = Crc16(CalculatedCRC, (const uint8_t*)CrcPack, 2);
 
                 if(i == 127) //Last Word
                 {
@@ -421,8 +429,8 @@ uint32_t USB_MSC_Read(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t c
                     SPIRx(&dataCRCWord);
                 }
             }
-            sectorBufferValid[sectorNumberFromDrive] = 1; //Mark the sector as cached
-            completedBlocks++;
+            SectorBufferValid[SectorNumberFromDrive] = 1; //Mark the sector as cached
+            CompletedBlocks++;
         }
     }
 
@@ -442,23 +450,23 @@ uint32_t USB_MSC_Write(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t 
     uint_fast8_t head = 0;
     uint_fast16_t track = 0;
 
-    uint_fast32_t completedBlocks = 0;
-    while(completedBlocks<count)
+    uint_fast32_t CompletedBlocks = 0;
+    while(CompletedBlocks<count)
     {
         //Looks like simh uses this layout for logical access. It's not physically optimal.
-        head = sectorNum+completedBlocks > 20479 ? 1 : 0;
-        sector = (sectorNum+completedBlocks) % 40;
-        track = ((sectorNum+completedBlocks) / 40) % 512;
+        head = sectorNum+CompletedBlocks > 20479 ? 1 : 0;
+        sector = (sectorNum+CompletedBlocks) % 40;
+        track = ((sectorNum+CompletedBlocks) / 40) % 512;
 
         //This is how the RL02 User guide lists linear access
         /*/ /Entire track, alternating heads
-        head = (sectorNum+completedBlocks) % 80 > 39 ? 1 : 0;
-        sector = ((sectorNum+completedBlocks) % 40);
-        track = ((sectorNum+completedBlocks) / 80) % 512;
+        head = (sectorNum+CompletedBlocks) % 80 > 39 ? 1 : 0;
+        sector = ((sectorNum+CompletedBlocks) % 40);
+        track = ((sectorNum+CompletedBlocks) / 80) % 512;
         */
 
         int32_t ret;
-        uint32_t dataWord;
+        uint32_t DataWord;
 
         ret = seek(drive, head, track); //Seeks are internally a NOP if we're on it.
         if(ret<0) //If the seek failed
@@ -467,50 +475,51 @@ uint32_t USB_MSC_Write(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t 
             return 0;
         }
 
-        dataWord = 0b0100000000000000; //The Write Sector Word
+        DataWord = 0b0100000000000000; //The Write Sector Word
 
-        SPITx(dataWord); //Command the drive to write
+        SPITx(DataWord); //Command the drive to write
 
-        dataWord = (sector & 0b111111);//Give the drive the sector we want to write
+        DataWord = (sector & 0b111111);//Give the drive the sector we want to write
 
-        SPITx(dataWord);
+        SPITx(DataWord);
 
         //Data Preamble
-        dataWord = 0;
-        SPITx(dataWord);
-        SPITx(dataWord);
-        SPITx(dataWord);
+        DataWord = 0;
+        SPITx(DataWord);
+        SPITx(DataWord);
+        SPITx(DataWord);
 
-        sectorBufferValid[sector] = 0; //Mark the sector as not cached
+        SectorBufferValid[sector] = 0; //Mark the sector as not cached
 
-        uint16_t calculatedCRC = 0;
+        uint16_t CalculatedCRC = 0;
         for(i = 0; i<128; i++)
         {
-            uint8_t crcPack[2];
+            uint8_t CrcPack[2];
 
-            dataWord = data[(i*2)+(completedBlocks*256)] & 0xFF;
-            dataWord |= (data[(i*2)+(completedBlocks*256)+1] & 0xFF) << 8;
+            DataWord = data[(i*2)+(CompletedBlocks*256)] & 0xFF;
+            DataWord |= (data[(i*2)+(CompletedBlocks*256)+1] & 0xFF) << 8;
 
-            crcPack[0] = dataWord;
-            crcPack[1] = (dataWord>>8);
-            calculatedCRC = Crc16(calculatedCRC, (const uint8_t*)crcPack, 2);
+            CrcPack[0] = DataWord;
+            CrcPack[1] = (DataWord>>8);
+            CalculatedCRC = Crc16(CalculatedCRC, (const uint8_t*)CrcPack, 2);
 
-            SPITx(dataWord);
+            SPITx(DataWord);
 
-            sectorBuffer[i+(sector*128)] = dataWord; //Cache the value
+            SectorBuffer[i+(sector*128)] = DataWord; //Cache the value
 
             if(i == 127) //Last Word
             {
-                SPITx(calculatedCRC);
+                SPITx(CalculatedCRC);
             }
         }
 
-        dataWord = 0;//Data Postamble
-        SPITx(dataWord);
+        DataWord = 0;//Data Postamble
+        SPITx(DataWord);
 
-        completedBlocks++;
+        CompletedBlocks++;
         //At this point, the FPGA should begin writting data to the drive
     }
 
     return(count * 256);
 }
+
