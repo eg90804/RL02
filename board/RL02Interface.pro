@@ -1,6 +1,6 @@
-update=Tue 21 Apr 2015 07:59:25 PM EDT
+update=Mon 01 May 2017 12:17:38 PM CEST
 version=1
-last_client=kicad
+last_client=eeschema
 [pcbnew]
 version=1
 LastNetListRead=
@@ -40,7 +40,15 @@ RptLab=1
 LabSize=60
 [eeschema]
 version=1
+PageLayoutDescrFile=
+SubpartIdSeparator=0
+SubpartFirstId=65
 LibDir=C:/Users/ChrisP/Documents/RL02Controller/RL02Controller.pretty
+NetFmtName=
+RptD_X=0
+RptD_Y=100
+RptLab=1
+LabSize=60
 [eeschema/libraries]
 LibName1=power
 LibName2=device
