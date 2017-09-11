@@ -3,13 +3,11 @@
 
 #include <stdint.h>
 
-uint32_t USB_MSC_BlockCount(void *drive);
-uint32_t USB_MSC_BlockSize(void *drive);
-
-extern void* USB_MSC_Open(uint32_t driveNum);
-extern void USB_MSC_Close(void *drive);
-
-extern uint32_t USB_MSC_Read(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t count);
-extern uint32_t USB_MSC_Write(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t count);
+extern void*    usb_RL02_Open(uint32_t driveNum);
+extern void     usb_RL02_Close(void *drive);
+extern uint32_t usb_RL02_Read(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t count);
+extern uint32_t usb_RL02_Write(void *drive, uint8_t *data, uint32_t sectorNum, uint32_t count);
+extern uint32_t usb_RL02_BlockCount(void *drive);
+extern uint32_t usb_RL02_BlockSize(void *drive);
 
 #endif

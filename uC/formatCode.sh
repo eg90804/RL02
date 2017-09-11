@@ -1,2 +1,2 @@
 #!/bin/sh
-astyle -n --style=allman --indent=spaces=4 *.c *.h
+astyle -n --style=allman --indent=spaces=2 *.c *.h

@@ -1,7 +1,0 @@
-
-Possible wishes.
-
-Have a 2nd channel on the USB to act as a status register, so drive status bits
-can be examined by the host.
-
-

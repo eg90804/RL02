@@ -1,0 +1,18 @@
+Enhancements for next release
+
+Have a 2nd channel on the USB to act as a status register, so pseudo drive status 
+register bits can be examined by the host.
+
+In new rev of board, have the 'drive ready' signal also fed into the uC
+so it knows if the drive is ready. Now this signal is only fed into the FPGA
+
+In new rev of board, have the 'drive error' signal also fed into the uC
+so it knows if the drive has a fault. Now this signal is not used.
+
+In new rev of board, have the 'status' signal also fed into the uC.
+For possible future use?
+
+In new rev of board, have the 'status clock' signal also fed into the uC.
+For possible future use?
+
+

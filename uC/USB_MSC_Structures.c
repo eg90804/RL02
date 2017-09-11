@@ -15,15 +15,17 @@
 #define MSC_BUFFER_SIZE 512
 #define DESCRIPTOR_TABLE_SIZE ( sizeof(usbDescriptorTable)/sizeof(uint8_t *) )
 
-//Language table (I have no idea why this is required)
+//Supported Languages table
 const uint8_t usbDescriptor_language[] = {
-	4, USB_DTYPE_STRING, USBShort(USB_LANG_EN_US)
+	4, USB_DTYPE_STRING,
+	USBShort(USB_LANG_EN_US)
 	};
 
 //Manufacturer
 const uint8_t usbDescriptor_manufacturer[] = {
-	(9 + 1) * 2, USB_DTYPE_STRING,
-	'U', 0, 'l', 0, 't', 0, 'r', 0, 'a', 0, 's', 0, 'o', 0, 'f', 0, 't', 0
+	(10 + 1) * 2, USB_DTYPE_STRING,
+	'A', 0, 'C', 0, 'M', 0, 'E', 0, ' ', 0, 'c', 0, 'o', 0, 'r', 0, 'p', 0
+	'.', 0
 	};
 
 //Product name reported to the PC
@@ -49,7 +51,7 @@ const uint8_t usbDescriptor_interface[] = {
 	'e', 0
 	};
 
-//USB configuration type (I really don't understand why USB had to be so design-by-committee)
+//USB configuration type 
 const uint8_t usbDescriptor_config[] = {
 	(23 + 1) * 2, USB_DTYPE_STRING,
 	'B', 0, 'u', 0, 'l', 0, 'k', 0, ' ', 0, 'D', 0, 'a', 0, 't', 0, 'a', 0,
@@ -58,7 +60,7 @@ const uint8_t usbDescriptor_config[] = {
 	};
 
 //Table holds all these USB descriptor strings so they can be pointed to
-const uint8_t * const usbDescriptorTable[] = {
+const uint8_t * const usb_RL02_DescriptorTable[] = {
 	usbDescriptor_language,
 	usbDescriptor_manufacturer,
 	usbDescriptor_product,
@@ -67,26 +69,29 @@ const uint8_t * const usbDescriptorTable[] = {
 	usbDescriptor_config
 	};
 
+const tMSCDMedia usb_RL02_MediaFunctions = {
+	usb_RL02_Open,
+	usb_RL02_Close,
+	usb_RL02_Read,
+	usb_RL02_Write,
+	usb_RL02_BlockCount,
+	usb_RL02_BlockSize,
+	};
+
+
 //The device structure is what is passed (via the USB library) to the PC
-tUSBDMSCDevice USB_deviceStructure =
-{
-    USB_VID_TI_1CBE,		//Vendor ID (Used the provided one from TI)
-    USB_PID_MSC,		//Product ID (Used the provided one from TI)
-    "OSHW    ",			//Vendor
-    "RL02 USB ADAPTER",		//Product Name
-    "0.02",			//Version Number
-    200,			//200Ma //TODO is this in units of 1mA or 2mA?
-    USB_CONF_ATTR_BUS_PWR,	//This is a bus powered device
-    usbDescriptorTable,		//Here's the pointer to the usb descriptors
-    DESCRIPTOR_TABLE_SIZE,	//Byte size of descriptor table
-    {
-        //Targets for the USB callback handler
-        USB_MSC_Open,
-	USB_MSC_Close,
-	USB_MSC_Read,
-        USB_MSC_Write,
-	USB_MSC_BlockCount,
-	USB_MSC_BlockSize,
-    },
-    USB_MSC_CallbackEventHandler //The actual handler for the USB callbacks
-};
+tUSBDMSCDevice usb_RL02_DeviceStructure = {
+	USB_VID_TI_1CBE,	  //Vendor ID, we use the one provided by TI
+	USB_PID_MSC,		  //Product ID, we use the one provided by TI
+	"OSHW    ",		  //Vendor, 8 fixed characters
+	"RL02 USB ADAPTER",	  //Product Name, 16 fixed characters
+	"0.02",			  //Version Number
+	250,			  //250Ma
+	USB_CONF_ATTR_BUS_PWR,	  //This is a bus powered device
+	usb_RL02_DescriptorTable, //Here's the pointer to the usb descriptors
+	DESCRIPTOR_TABLE_SIZE,	  //Byte size of descriptor table
+	usb_RL02_MediaFunctions,  //Targets for the USB callback handler
+	usb_RL02_CallbackHndlr,	  //The actual handler for the USB callbacks
+	tMSCInstance sPrivateData
+	};
+
